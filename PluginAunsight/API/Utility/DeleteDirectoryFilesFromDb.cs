@@ -1,30 +1,41 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using PluginAunsight.API.Factory;
 using PluginAunsight.Helper;
 using SQLDatabase.Net.SQLDatabaseClient;
 
 namespace PluginAunsight.API.Utility
 {
-    public static partial class Utility
+  public static partial class Utility
+  {
+    public static void DeleteDirectoryFilesFromDb(SqlDatabaseConnection conn, string tableName, string schemaName,
+        IImportExportFactory factory, RootPathObject rootPath, List<string> paths)
     {
-        public static void DeleteDirectoryFilesFromDb(SqlDatabaseConnection conn, string tableName, string schemaName)
+      try
+      {
+        var tableNames = factory.MakeImportExportFile(conn, rootPath, tableName, schemaName)
+            .GetAllTableNames();
+
+        foreach (var table in tableNames)
         {
-            try
-            {
-                Logger.Info($"Purging table: [{schemaName}].[{tableName}]");
-                var cmd = new SqlDatabaseCommand
-                {
-                    Connection = conn,
-                    CommandText =
-                        $@"DROP TABLE IF EXISTS [{schemaName}].[{tableName}]"
-                };
-            
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception e)
-            {
-                Logger.Error(e, e.Message);
-                Logger.Error(e, "Skipping delete");
-            }
+          var tableNameId = $"[{table.SchemaName}].[{table.TableName}]";
+          Logger.Info($"Purging table: {tableNameId}");
+          var cmd = new SqlDatabaseCommand
+          {
+            Connection = conn,
+            CommandText =
+                  $@"DROP TABLE IF EXISTS {tableNameId}"
+          };
+
+          cmd.ExecuteNonQuery();
         }
+      }
+      catch (Exception e)
+      {
+        Logger.Error(e, e.Message);
+        Logger.Error(e, "Skipping delete");
+      }
     }
+  }
 }

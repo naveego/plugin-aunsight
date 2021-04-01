@@ -32,7 +32,7 @@ namespace PluginAunsight.API.Factory.Implementations.FixedWidthColumns
             throw new NotImplementedException();
         }
 
-        public List<SchemaTable> GetAllTableNames(string filePathAndName)
+        public List<SchemaTable> GetAllTableNames(bool downloadToLocal = false)
         {
             return new List<SchemaTable>
             {
@@ -44,7 +44,7 @@ namespace PluginAunsight.API.Factory.Implementations.FixedWidthColumns
             };
         }
 
-        public long ImportTable(string filePathAndName, RootPathObject rootPath, long limit = long.MaxValue)
+        public long ImportTable(string filePathAndName, RootPathObject rootPath, bool downloadToLocal = false, long limit = long.MaxValue)
         {
             // setup db table
             var querySb = new StringBuilder($"CREATE TABLE IF NOT EXISTS [{_schemaName}].[{_tableName}] (");
@@ -86,7 +86,7 @@ namespace PluginAunsight.API.Factory.Implementations.FixedWidthColumns
             cmd.ExecuteNonQuery();
 
             // read file into db
-            var streamWrapper = Utility.Utility.GetStream(filePathAndName, rootPath.FileReadMode);
+            var streamWrapper = Utility.Utility.GetStream(filePathAndName, rootPath.FileReadMode, downloadToLocal);
             var file = streamWrapper.StreamReader;
             string line;
             var rowsRead = 0;

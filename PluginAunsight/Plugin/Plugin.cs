@@ -79,6 +79,7 @@ namespace PluginAunsight.Plugin
                 _server.Settings.ReconcileColumnsConfigurationFiles();
                 _server.Settings.ReconcileAS400FormatsFiles();
                 _server.Settings.InitializeFtpSettings();
+                _server.Settings.InitializeIndexes();
                 _server.Settings.Validate();
             }
             catch (Exception e)
@@ -158,13 +159,13 @@ namespace PluginAunsight.Plugin
                 {
                     await DiscoverSemaphoreSlim.WaitAsync();
 
-                    var files = _server.Settings.GetAllFilesByRootPath(1);
+                    var files = _server.Settings.GetAllFilesByRootPath();
                     Logger.Info($"Files attempted: {files.Count}");
 
                     var schemas = _server.Settings.RootPaths.Select(p =>
-                            Discover.GetSchemasForDirectory(Utility.GetImportExportFactory(p.Mode), p,
+                            Discover.GetSchemasForDirectory(context, Utility.GetImportExportFactory(p.Mode), p,
                                 files[p.RootPathName()],
-                                sampleSize))
+                                sampleSize)).Select(l => l.Where(s => s != null))
                         .ToList();
 
                     discoverSchemasResponse.Schemas.AddRange(schemas.SelectMany(s => s));
@@ -192,7 +193,7 @@ namespace PluginAunsight.Plugin
 
                 Logger.Info($"Refresh schemas attempted: {refreshSchemas.Count}");
 
-                var files = _server.Settings.GetAllFilesByRootPath(1);
+                var files = _server.Settings.GetAllFilesByRootPath();
                 var conn = Utility.GetSqlConnection(Constants.DiscoverDbPrefix);
 
                 if (sampleSize == 0)
@@ -209,10 +210,10 @@ namespace PluginAunsight.Plugin
 
                     Utility.LoadDirectoryFilesIntoDb(
                         Utility.GetImportExportFactory(rootPath.Mode), conn, rootPath,
-                        tableName, schemaName, files[rootPath.RootPathName()], sampleSize, 1);
+                        tableName, schemaName, files[rootPath.RootPathName()], false, sampleSize, 1);
                 }
 
-                var schemas = refreshSchemas.Select(s => Discover.GetSchemaForQuery(s, sampleSize))
+                var schemas = refreshSchemas.Select(s => Discover.GetSchemaForQuery(context, s, sampleSize))
                     .ToArray();
 
                 discoverSchemasResponse.Schemas.AddRange(schemas.Where(x => x != null));
@@ -273,9 +274,9 @@ namespace PluginAunsight.Plugin
                         {
                             Utility.LoadDirectoryFilesIntoDb(Utility.GetImportExportFactory(rootPath.Mode), conn,
                                 rootPath,
-                                tableName, schemaName, new List<string> {file});
+                                tableName, schemaName, new List<string> {file}, true);
 
-                            var records = Read.ReadRecords(schema, jobId);
+                            var records = Read.ReadRecords(context, schema, jobId);
 
                             foreach (var record in records)
                             {
@@ -293,7 +294,7 @@ namespace PluginAunsight.Plugin
                     }
                     else
                     {
-                        Utility.DeleteDirectoryFilesFromDb(conn, tableName, schemaName);
+                        Utility.DeleteDirectoryFilesFromDb(conn, tableName, schemaName, Utility.GetImportExportFactory(rootPath.Mode), rootPath, files);
                     }
                 }
                 else
@@ -302,9 +303,12 @@ namespace PluginAunsight.Plugin
                     var rootPaths = _server.Settings.GetRootPathsFromQuery(schema.Query);
 
                     Logger.Info(
-                        $"Query root paths {JsonConvert.SerializeObject(rootPaths.Select(r => r.RootPath).ToList(), Formatting.Indented)}");
+                        $"Query root paths {JsonConvert.SerializeObject(rootPaths.Select(r => r.RootPathName()).ToList(), Formatting.Indented)}");
 
+                    Logger.Info($"Begin loading all files.");
+                    
                     // schema is query based so everything in query needs to be loaded first
+                    var hasRecords = true;
                     foreach (var rootPath in rootPaths)
                     {
                         var files = filesByRootPath[rootPath.RootPathName()];
@@ -316,27 +320,34 @@ namespace PluginAunsight.Plugin
                         {
                             Utility.LoadDirectoryFilesIntoDb(Utility.GetImportExportFactory(rootPath.Mode), conn,
                                 rootPath,
-                                tableName, schemaName, files);
+                                tableName, schemaName, files, true);
                         }
                         else
                         {
-                            Utility.DeleteDirectoryFilesFromDb(conn, tableName, schemaName);
+                            hasRecords = false;
+                            Utility.DeleteDirectoryFilesFromDb(conn, tableName, schemaName, Utility.GetImportExportFactory(rootPath.Mode), rootPath, files);
                         }
                     }
+                    
+                    Logger.Info("Completed loading all files.");
 
-                    var records = Read.ReadRecords(schema, jobId);
-
-                    foreach (var record in records)
+                    if (hasRecords)
                     {
-                        // stop publishing if the limit flag is enabled and the limit has been reached or the server is disconnected
-                        if ((limitFlag && recordsCount == limit) || !_server.Connected)
-                        {
-                            break;
-                        }
+                        var records = Read.ReadRecords(context, schema, jobId);
 
-                        // publish record
-                        await responseStream.WriteAsync(record);
-                        recordsCount++;
+                        foreach (var record in records)
+                        {
+                            // stop publishing if the limit flag is enabled and the limit has been reached or the server is disconnected
+                            if ((limitFlag && recordsCount == limit) || !_server.Connected)
+                            {
+                                Logger.Info($"Stopping read - limit reached: {limitFlag && recordsCount == limit}, server disconnected: {!_server.Connected}");
+                                break;
+                            }
+
+                            // publish record
+                            await responseStream.WriteAsync(record);
+                            recordsCount++;
+                        }
                     }
                 }
 
@@ -364,21 +375,11 @@ namespace PluginAunsight.Plugin
 
                             break;
                     }
-
-                    // clean up local files pulled from remote
-                    if (rootPath.FileReadMode != Constants.FileModeLocal)
-                    {
-                        foreach (var file in files)
-                        {
-                            Logger.Info($"Source file is not local, deleting local file {file}");
-                            Utility.DeleteFileAtPath(file, rootPath, _server.Settings, false);
-                        }
-                    }
                 }
             }
             catch (Exception e)
             {
-                Logger.Error(e, e.StackTrace, context);
+                Logger.Error(e, e.Message, context);
             }
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Grpc.Core;
 using Naveego.Sdk.Plugins;
 using Newtonsoft.Json;
 using PluginAunsight.Helper;
@@ -12,10 +13,11 @@ namespace PluginAunsight.API.Read
         /// <summary>
         /// Reads records for schema
         /// </summary>
+        /// <param name="context"></param>
         /// <param name="schema"></param>
         /// <param name="dbFilePrefix"></param>
         /// <returns>Records from the file</returns>
-        public static IEnumerable<Record> ReadRecords(Schema schema, string dbFilePrefix)
+        public static IEnumerable<Record> ReadRecords(ServerCallContext context, Schema schema, string dbFilePrefix)
         {
             var query = schema.Query;
 
@@ -35,16 +37,25 @@ namespace PluginAunsight.API.Read
             SqlDatabaseDataReader reader;
             try
             {
+                Logger.Info($"Executing query");
+                Logger.Debug(query);
+                
                 reader = cmd.ExecuteReader();
             }
             catch (Exception e)
             {
-                Logger.Error(e, e.Message);
-                yield break;
+                Logger.Error(e,$"Failed to execute query");
+                Logger.Debug(query);
+                Logger.Error(e, e.Message, context);
+                throw;
             }
+            
+            Logger.Info("Executed query successfully");
             
             if (reader.HasRows)
             {
+                Logger.Info("Results set has rows. Reading...");
+                
                 while (reader.Read())
                 {
                     var recordMap = new Dictionary<string, object>();
@@ -65,8 +76,7 @@ namespace PluginAunsight.API.Read
                         }
                         catch (Exception e)
                         {
-                            Logger.Error(e, $"No column with property Id: {property.Id}");
-                            Logger.Error(e, e.Message);
+                            Logger.Debug($"No column with property Id: {property.Id}\n{e.Message}\n{e.StackTrace}");
                             recordMap[property.Id] = "";
                         }
                     }

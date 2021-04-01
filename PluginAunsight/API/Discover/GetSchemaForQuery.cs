@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using Grpc.Core;
 using Naveego.Sdk.Plugins;
 using Newtonsoft.Json;
 using PluginAunsight.API.Utility;
@@ -13,7 +14,7 @@ namespace PluginAunsight.API.Discover
 {
     public static partial class Discover
     {
-        public static Schema GetSchemaForQuery(Schema schema, int sampleSize = 5, List<Column> columns = null)
+        public static Schema GetSchemaForQuery(ServerCallContext context, Schema schema, int sampleSize = 5, List<Column> columns = null)
         {
             try
             {
@@ -38,9 +39,6 @@ namespace PluginAunsight.API.Discover
                     }
 
                     query = Utility.Utility.GetDefaultQuery(schema);
-
-                    // Logger.Info("Returning null schema for null query");
-                    // return null;
                 }
 
                 var conn = Utility.Utility.GetSqlConnection(Constants.DiscoverDbPrefix);
@@ -115,11 +113,18 @@ namespace PluginAunsight.API.Discover
                 schema.Properties.Clear();
                 schema.Properties.AddRange(properties);
 
-                var records = Read.Read.ReadRecords(schema, Constants.DiscoverDbPrefix).Take(sampleSize);
-                schema.Sample.AddRange(records);
+                try
+                {
+                    var records = Read.Read.ReadRecords(context, schema, Constants.DiscoverDbPrefix).Take(sampleSize);
+                    schema.Sample.AddRange(records);
+                }
+                catch
+                {
+                    Logger.Info("Could not add records");
+                }
                 
                 // purge publisher meta json
-                schema.PublisherMetaJson = null;
+                schema.PublisherMetaJson = "";
 
                 return schema;
             }

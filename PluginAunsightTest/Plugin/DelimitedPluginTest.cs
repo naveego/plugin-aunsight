@@ -80,18 +80,29 @@ namespace PluginAunsightTest.Plugin
             return new Settings
             {
                 FtpHostname = "",
-                FtpPort = 21,
+                FtpPort = 2222,
                 FtpUsername = "",
                 FtpPassword = "",
+                Indexes = new List<IndexObject>
+                {
+                    new IndexObject
+                    {
+                        TableName = "ReadDirectory",
+                        IndexColumns = new List<string>()
+                        {
+                            "id"
+                        }
+                    }
+                },
                 RootPaths = multiRoot
                     ? new List<RootPathObject>
                     {
                         new RootPathObject
                         {
-                            RootPath = sftp ? "/CSV" : ReadPath,
+                            RootPath = sftp ? "/sftp/csvtest" : ReadPath,
                             Filter = filter ?? DefaultFilter,
                             Mode = DelimitedMode,
-                            FileReadMode = sftp ? "FTP" : "Local",
+                            FileReadMode = sftp ? "SFTP" : "Local",
                             Delimiter = delimiter,
                             HasHeader = true,
                             CleanupAction = cleanupAction ?? DefaultCleanupAction,
@@ -99,10 +110,10 @@ namespace PluginAunsightTest.Plugin
                         },
                         new RootPathObject
                         {
-                            RootPath = sftp ? "/CSV" : ReadDifferentPath,
+                            RootPath = sftp ? "/sftp/csvtest" : ReadDifferentPath,
                             Filter = filter ?? DefaultFilter,
                             Mode = DelimitedMode,
-                            FileReadMode = sftp ? "FTP" : "Local",
+                            FileReadMode = sftp ? "SFTP" : "Local",
                             Delimiter = delimiter,
                             HasHeader = true,
                             CleanupAction = cleanupAction ?? DefaultCleanupAction,
@@ -113,11 +124,11 @@ namespace PluginAunsightTest.Plugin
                     {
                         new RootPathObject
                         {
-                            RootPath = sftp ? "/CSV" : ReadPath,
+                            RootPath = sftp ? "/sftp/csvtest" : ReadPath,
                             Filter = filter ?? DefaultFilter,
                             Delimiter = delimiter,
                             Mode = DelimitedMode,
-                            FileReadMode = sftp ? "FTP" : "Local",
+                            FileReadMode = sftp ? "SFTP" : "Local",
                             HasHeader = true,
                             CleanupAction = cleanupAction ?? DefaultCleanupAction,
                             ArchivePath = sftp ? "/CSV/Archive" : ArchivePath
@@ -810,15 +821,15 @@ namespace PluginAunsightTest.Plugin
 
             var discoverAllRequest = new DiscoverSchemasRequest
             {
-                Mode = DiscoverSchemasRequest.Types.Mode.All,
+                Mode = DiscoverSchemasRequest.Types.Mode.Refresh,
+                ToRefresh = { GetTestSchema($@"select a.id, a.first_name, a.last_name, b.car_make
+from ReadDirectory as a
+inner join ReadDirectoryDifferent as b
+on a.id = b.id")}
             };
 
             var request = new ReadRequest()
             {
-                Schema = GetTestSchema($@"select a.id, a.first_name, a.last_name, b.car_make
-from ReadDirectory as a
-inner join ReadDirectoryDifferent as b
-on a.id = b.id"),
                 DataVersions = new DataVersions
                 {
                     JobId = "test"
@@ -828,7 +839,8 @@ on a.id = b.id"),
 
             // act
             client.Connect(connectRequest);
-            client.DiscoverSchemas(discoverAllRequest);
+            var discoverResponse =client.DiscoverSchemas(discoverAllRequest);
+            request.Schema = discoverResponse.Schemas[0];
             var response = client.ReadStream(request);
             var responseStream = response.ResponseStream;
             var records = new List<Record>();
@@ -883,22 +895,27 @@ on a.id = b.id"),
             // act
             client.Connect(connectRequest);
             client.DiscoverSchemas(discoverAllRequest);
-            var response = client.ReadStream(request);
-            var responseStream = response.ResponseStream;
-            var records = new List<Record>();
 
-            while (await responseStream.MoveNext())
+
+            await Assert.ThrowsAsync<RpcException>(async () =>
             {
-                records.Add(responseStream.Current);
-            }
-
-            Assert.Empty(records);
+                var response = client.ReadStream(request);
+                var responseStream = response.ResponseStream;
+                var records = new List<Record>();
+                
+                while (await responseStream.MoveNext())
+                {
+                    records.Add(responseStream.Current);
+                }
+                
+                Assert.Empty(records);
+            });
 
             // cleanup
             await channel.ShutdownAsync();
             await server.ShutdownAsync();
         }
-
+        
         [Fact]
         public async Task ReadStreamDirectoryBasedSchemaTest()
         {
@@ -1089,7 +1106,7 @@ on a.id = b.id"),
         }
 
         [Fact]
-        public async Task ReadStreamFtpTest()
+        public async Task ReadStreamSftpTest()
         {
             // setup
             PrepareTestEnvironment();
@@ -1129,7 +1146,6 @@ on a.id = b.id"),
             var request = new ReadRequest()
             {
                 Schema = discoverResponse.Schemas[0],
-                Limit = 10,
                 DataVersions = new DataVersions
                 {
                     JobId = "test"
@@ -1147,12 +1163,73 @@ on a.id = b.id"),
             }
 
             // assert
-            Assert.Equal(10, records.Count);
+            Assert.Equal(2000, records.Count);
 
             // cleanup
             await channel.ShutdownAsync();
             await server.ShutdownAsync();
         }
+        
+        [Fact]
+        public async Task ReadStreamSftpQueryBasedSchemaTest()
+        {
+            // setup
+            PrepareTestEnvironment();
+            Server server = new Server
+            {
+                Services = {Publisher.BindService(new PluginAunsight.Plugin.Plugin())},
+                Ports = {new ServerPort("localhost", 0, ServerCredentials.Insecure)}
+            };
+            server.Start();
+
+            var port = server.Ports.First().BoundPort;
+
+            var channel = new Channel($"localhost:{port}", ChannelCredentials.Insecure);
+            var client = new Publisher.PublisherClient(channel);
+
+            var connectRequest = GetConnectSettings(Constants.CleanupActionNone, ",", "*.csv", false, false, true);
+
+            var configureRequest = new ConfigureRequest
+            {
+                TemporaryDirectory = "../../../Temp",
+                PermanentDirectory = "../../../Perm",
+                LogDirectory = "../../../Logs",
+                DataVersions = new DataVersions(),
+                LogLevel = LogLevel.Debug
+            };
+            
+
+            // act
+            client.Configure(configureRequest);
+            client.Connect(connectRequest);
+
+            var request = new ReadRequest()
+            {
+                Schema = GetTestSchema($@"select * from csvtest"),
+                DataVersions = new DataVersions
+                {
+                    JobId = "test"
+                },
+                JobId = "test",
+            };
+
+            var response = client.ReadStream(request);
+            var responseStream = response.ResponseStream;
+            var records = new List<Record>();
+
+            while (await responseStream.MoveNext())
+            {
+                records.Add(responseStream.Current);
+            }
+
+            // assert
+            Assert.Equal(2000, records.Count);
+
+            // cleanup
+            await channel.ShutdownAsync();
+            await server.ShutdownAsync();
+        }
+
 
         [Fact]
         public async Task ReadStreamCleanUpArchiveFullTest()

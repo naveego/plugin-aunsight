@@ -52,7 +52,7 @@ namespace PluginAunsight.API.Write
                             {
                                 try
                                 {
-                                    var fileStream = Utility.Utility.GetStream(localFileName, config.FileWriteMode);
+                                    var fileStream = Utility.Utility.GetStream(localFileName, Constants.FileModeLocal, true);
                                     client.UploadFile(fileStream.Stream, remoteFileName);
                                     fileStream.Close();
                                 }

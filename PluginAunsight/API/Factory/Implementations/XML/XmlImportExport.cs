@@ -37,20 +37,15 @@ namespace PluginAunsight.API.Factory.Implementations.XML
             throw new System.NotImplementedException();
         }
         
-        public List<SchemaTable> GetAllTableNames(string filePathAndName)
+        public List<SchemaTable> GetAllTableNames(bool downloadToLocal)
         {
             var tableNamesList = new List<SchemaTable>();
-
-            if (string.IsNullOrWhiteSpace(filePathAndName))
-            {
-                return tableNamesList;
-            }
             
             // parse xml into multiple tables
             DataSet dataSet = new DataSet();
 
             var stream = Utility.Utility.GetStream(_rootPath.ModeSettings.XMLSettings.XsdFilePathAndName,
-                _rootPath.FileReadMode);
+                _rootPath.FileReadMode, downloadToLocal);
             dataSet.ReadXmlSchema(stream.Stream);
             stream.Close();
 
@@ -68,7 +63,7 @@ namespace PluginAunsight.API.Factory.Implementations.XML
             return tableNamesList;
         }
 
-        public long ImportTable(string filePathAndName, RootPathObject rootPath, long limit = -1)
+        public long ImportTable(string filePathAndName, RootPathObject rootPath, bool downloadToLocal = false, long limit = -1)
         {
             var totalRowsRead = 0;
             
@@ -79,7 +74,7 @@ namespace PluginAunsight.API.Factory.Implementations.XML
             var globalKeyValue = "";
             
             // load xml doc
-            var stream = Utility.Utility.GetStream(filePathAndName, rootPath.FileReadMode);
+            var stream = Utility.Utility.GetStream(filePathAndName, rootPath.FileReadMode, downloadToLocal);
             XmlDocument doc = new XmlDocument();
             doc.Load(stream.Stream);
 
@@ -134,14 +129,14 @@ namespace PluginAunsight.API.Factory.Implementations.XML
             DataSet dataSet = new DataSet();
 
             stream = Utility.Utility.GetStream(rootPath.ModeSettings.XMLSettings.XsdFilePathAndName,
-                rootPath.FileReadMode);
+                rootPath.FileReadMode, downloadToLocal);
             dataSet.ReadXmlSchema(stream.Stream);
             stream.Close();
 
             dataSet.Locale = CultureInfo.InvariantCulture;
             dataSet.EnforceConstraints = false;
 
-            stream = Utility.Utility.GetStream(filePathAndName, rootPath.FileReadMode);
+            stream = Utility.Utility.GetStream(filePathAndName, rootPath.FileReadMode, downloadToLocal);
             dataSet.ReadXml(stream.Stream, XmlReadMode.Auto);
             stream.Close();
 

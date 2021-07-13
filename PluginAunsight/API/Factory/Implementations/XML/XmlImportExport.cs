@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Xml;
+using Naveego.Sdk.Logging;
 using PluginAunsight.Helper;
 using SQLDatabase.Net.SQLDatabaseClient;
 

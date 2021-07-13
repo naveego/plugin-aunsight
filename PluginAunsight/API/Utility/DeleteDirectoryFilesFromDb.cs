@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Naveego.Sdk.Logging;
 using PluginAunsight.API.Factory;
 using PluginAunsight.Helper;
 using SQLDatabase.Net.SQLDatabaseClient;

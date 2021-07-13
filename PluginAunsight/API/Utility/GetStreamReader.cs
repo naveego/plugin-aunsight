@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using FluentFTP;
+using Naveego.Sdk.Logging;
 using PluginAunsight.Helper;
 using Renci.SshNet;
 

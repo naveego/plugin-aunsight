@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Naveego.Sdk.Logging;
 using PluginAunsight.DataContracts;
 using PluginAunsight.Helper;
 

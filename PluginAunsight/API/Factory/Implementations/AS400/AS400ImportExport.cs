@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Naveego.Sdk.Logging;
 using PluginAunsight.Helper;
 using SQLDatabase.Net.SQLDatabaseClient;
 
